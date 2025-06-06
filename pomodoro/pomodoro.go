@@ -1,8 +1,12 @@
 package pomodoro
 
 const DEFAULT_WORK_TIMER int = 25
-const DEFAULT_SHORT_BREAK int  = 5
+const DEFAULT_SHORT_BREAK int = 5
 const DEFAULT_LONG_BREAK int = 15
+const CICLES_PER_LAP int = 4
+const work string = "work"
+const shortBreak string = "shortBreak"
+const longBreak string = "longBreak"
 
 type Sleeper interface {
 	Work(minutes int)
@@ -10,9 +14,23 @@ type Sleeper interface {
 	LongBreak(minutes int)
 }
 
+type PomodoroOperations struct {
+	Calls []string
+}
+
+func (p *PomodoroOperations) Work() {
+	p.Calls = append(p.Calls, work)
+}
+func (p *PomodoroOperations) shortBreak() {
+	p.Calls = append(p.Calls, shortBreak)
+}
+func (p *PomodoroOperations) longBreak() {
+	p.Calls = append(p.Calls, longBreak)
+}
+
 // args should be supplied like this:
 // gomodoro start --work 25m --break 5m
-func Pomodoro(sleeper Sleeper, work, shortBreak, longBreak int) {
+func Pomodoro(operation *PomodoroOperations, sleeper Sleeper, work, shortBreak, longBreak int) {
 	if work == 0 {
 		work = DEFAULT_WORK_TIMER
 	}
@@ -25,10 +43,16 @@ func Pomodoro(sleeper Sleeper, work, shortBreak, longBreak int) {
 		longBreak = DEFAULT_LONG_BREAK
 	}
 
-	for range 4 {
+	for actualCicle := 1; actualCicle <= CICLES_PER_LAP; actualCicle++ {
 		sleeper.Work(work)
-		sleeper.ShortBreak(shortBreak)
+		operation.Work()
+		if actualCicle == CICLES_PER_LAP {
+			sleeper.LongBreak(longBreak)
+			operation.longBreak()
+		} else {
+			sleeper.ShortBreak(shortBreak)
+			operation.shortBreak()
+		}
 	}
 
-	sleeper.LongBreak(longBreak)
 }
