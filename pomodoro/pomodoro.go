@@ -1,8 +1,12 @@
 package pomodoro
 
 const DEFAULT_WORK_TIMER int = 25
-const DEFAULT_SHORT_BREAK int  = 5
+const DEFAULT_SHORT_BREAK int = 5
 const DEFAULT_LONG_BREAK int = 15
+const CICLES_PER_LAP int = 4
+const work string = "work"
+const shortBreak string = "shortBreak"
+const longBreak string = "longBreak"
 
 type Sleeper interface {
 	Work(minutes int)
@@ -25,10 +29,13 @@ func Pomodoro(sleeper Sleeper, work, shortBreak, longBreak int) {
 		longBreak = DEFAULT_LONG_BREAK
 	}
 
-	for range 4 {
+	for actualCicle := 1; actualCicle <= CICLES_PER_LAP; actualCicle++ {
 		sleeper.Work(work)
-		sleeper.ShortBreak(shortBreak)
+		if actualCicle == CICLES_PER_LAP {
+			sleeper.LongBreak(longBreak)
+		} else {
+			sleeper.ShortBreak(shortBreak)
+		}
 	}
 
-	sleeper.LongBreak(longBreak)
 }
