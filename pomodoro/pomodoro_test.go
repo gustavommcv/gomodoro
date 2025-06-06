@@ -6,7 +6,10 @@ import (
 )
 
 type SpySleeper struct {
-	CallCount CallCount
+	CallCount      CallCount
+	WorkTime       int
+	ShortBreakTime int
+	LongBreakTime  int
 }
 
 type CallCount struct {
@@ -15,20 +18,43 @@ type CallCount struct {
 	LongBreak  int
 }
 
-func (s *SpySleeper) Work() {
+func (s *SpySleeper) Work(minutes int) {
+	if s.WorkTime == 0 {
+		s.WorkTime = minutes
+	}
+
 	s.CallCount.Work++
 }
 
-func (s *SpySleeper) ShortBreak() {
+func (s *SpySleeper) ShortBreak(minutes int) {
+	if s.ShortBreakTime == 0 {
+		s.ShortBreakTime = minutes
+	}
+
 	s.CallCount.ShortBreak++
 }
 
-func (s *SpySleeper) LongBreak() {
+func (s *SpySleeper) LongBreak(minutes int) {
+	if s.LongBreakTime == 0 {
+		s.LongBreakTime = minutes
+	}
+
 	s.CallCount.LongBreak++
 }
 
 func TestPomodoro(t *testing.T) {
-	t.Run("it should use default params when no args are supplied", func(t *testing.T) {})
+	t.Run("it should use default params when no args are supplied", func(t *testing.T) {
+		sleeper := SpySleeper{}
+
+		Pomodoro(&sleeper)
+
+		want := SpySleeper{CallCount: sleeper.CallCount, WorkTime: DEFAULT_WORK_TIMER, ShortBreakTime: DEFAULT_SHORT_BREAK, LongBreakTime: DEFAULT_LONG_BREAK}
+		got := sleeper
+
+		if !reflect.DeepEqual(want, got) {
+			t.Errorf("expect %v, got %v", want, got)
+		}
+	})
 
 	t.Run("it should throw a error when invalid args are supplid", func(t *testing.T) {})
 
