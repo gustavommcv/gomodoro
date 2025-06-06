@@ -1,8 +1,8 @@
 package pomodoro
 
-const DEFAULT_WORK_TIMER = 25
-const DEFAULT_SHORT_BREAK = 5
-const DEFAULT_LONG_BREAK = 15
+const DEFAULT_WORK_TIMER int = 25
+const DEFAULT_SHORT_BREAK int  = 5
+const DEFAULT_LONG_BREAK int = 15
 
 type Sleeper interface {
 	Work(minutes int)
@@ -12,11 +12,23 @@ type Sleeper interface {
 
 // args should be supplied like this:
 // gomodoro start --work 25m --break 5m
-func Pomodoro(sleeper Sleeper, args ...int) {
-	for range 4 {
-		sleeper.Work(DEFAULT_WORK_TIMER)
-		sleeper.ShortBreak(DEFAULT_SHORT_BREAK)
+func Pomodoro(sleeper Sleeper, work, shortBreak, longBreak int) {
+	if work == 0 {
+		work = DEFAULT_WORK_TIMER
 	}
 
-	sleeper.LongBreak(DEFAULT_LONG_BREAK)
+	if shortBreak == 0 {
+		shortBreak = DEFAULT_SHORT_BREAK
+	}
+
+	if longBreak == 0 {
+		longBreak = DEFAULT_LONG_BREAK
+	}
+
+	for range 4 {
+		sleeper.Work(work)
+		sleeper.ShortBreak(shortBreak)
+	}
+
+	sleeper.LongBreak(longBreak)
 }
