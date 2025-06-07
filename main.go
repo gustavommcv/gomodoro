@@ -51,6 +51,7 @@ func (d *DefaultSleeper) showProgress(totalMinutes int, label string) {
 }
 
 func main() {
+
 	workDuration := flag.Int("work", 0, "Work duration in minutes")
 	shortBreakDuration := flag.Int("sbreak", 0, "Short break duration in minutes")
 	longBreakDuration := flag.Int("lbreak", 0, "Long break duration in minutes")
@@ -59,5 +60,5 @@ func main() {
 
 	sleeper := DefaultSleeper{progressWriter: os.Stdout}
 
-	pomodoro.Pomodoro(&sleeper, *workDuration, *shortBreakDuration, *longBreakDuration)
+	pomodoro.Pomodoro( &sleeper, *workDuration, *shortBreakDuration, *longBreakDuration)
 }
