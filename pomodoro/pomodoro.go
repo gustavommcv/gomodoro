@@ -4,9 +4,6 @@ const DEFAULT_WORK_TIMER int = 25
 const DEFAULT_SHORT_BREAK int = 5
 const DEFAULT_LONG_BREAK int = 15
 const CICLES_PER_LAP int = 4
-const work string = "work"
-const shortBreak string = "shortBreak"
-const longBreak string = "longBreak"
 
 type Sleeper interface {
 	Work(minutes int)
@@ -14,8 +11,6 @@ type Sleeper interface {
 	LongBreak(minutes int)
 }
 
-// args should be supplied like this:
-// gomodoro start --work 25m --break 5m
 func Pomodoro(sleeper Sleeper, work, shortBreak, longBreak int) {
 	if work == 0 {
 		work = DEFAULT_WORK_TIMER
@@ -37,5 +32,4 @@ func Pomodoro(sleeper Sleeper, work, shortBreak, longBreak int) {
 			sleeper.ShortBreak(shortBreak)
 		}
 	}
-
 }

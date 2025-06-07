@@ -5,6 +5,10 @@ import (
 	"testing"
 )
 
+const WORK string = "work"
+const SHORT_BREAK string = "shortBreak"
+const LONG_BREAK string = "longBreak"
+
 type SpySleeper struct {
 	CallCount      CallCount
 	WorkTime       int
@@ -25,8 +29,7 @@ func (s *SpySleeper) Work(minutes int) {
 	}
 
 	s.CallCount.Work++
-
-	s.Calls = append(s.Calls, work)
+	s.Calls = append(s.Calls, WORK)
 }
 
 func (s *SpySleeper) ShortBreak(minutes int) {
@@ -35,8 +38,7 @@ func (s *SpySleeper) ShortBreak(minutes int) {
 	}
 
 	s.CallCount.ShortBreak++
-
-	s.Calls = append(s.Calls, shortBreak)
+	s.Calls = append(s.Calls, SHORT_BREAK)
 }
 
 func (s *SpySleeper) LongBreak(minutes int) {
@@ -45,8 +47,7 @@ func (s *SpySleeper) LongBreak(minutes int) {
 	}
 
 	s.CallCount.LongBreak++
-
-	s.Calls = append(s.Calls, longBreak)
+	s.Calls = append(s.Calls, LONG_BREAK)
 }
 
 func TestPomodoro(t *testing.T) {
@@ -55,27 +56,11 @@ func TestPomodoro(t *testing.T) {
 
 		Pomodoro(&sleeper, 0, 0, 0)
 
-		want := struct {
-			WorkTime       int
-			ShortBreakTime int
-			LongBreakTime  int
-		}{
-			WorkTime:       DEFAULT_WORK_TIMER,
-			ShortBreakTime: DEFAULT_SHORT_BREAK,
-			LongBreakTime:  DEFAULT_LONG_BREAK,
-		}
-		got := struct {
-			WorkTime       int
-			ShortBreakTime int
-			LongBreakTime  int
-		}{
-			WorkTime:       sleeper.WorkTime,
-			ShortBreakTime: sleeper.ShortBreakTime,
-			LongBreakTime:  sleeper.LongBreakTime,
-		}
+		want := [...]int{DEFAULT_WORK_TIMER, DEFAULT_SHORT_BREAK, DEFAULT_LONG_BREAK}
+		got := [...]int{sleeper.WorkTime, sleeper.ShortBreakTime, sleeper.LongBreakTime}
 
 		if !reflect.DeepEqual(want, got) {
-			t.Errorf("expect %v, got %v", want, got)
+			t.Errorf("want %v, got %v", want, got)
 		}
 	})
 
@@ -87,27 +72,11 @@ func TestPomodoro(t *testing.T) {
 
 		Pomodoro(&sleeper, workTimer, shortBreakTimer, longBreakTimer)
 
-			want := struct {
-			WorkTime       int
-			ShortBreakTime int
-			LongBreakTime  int
-		}{
-			WorkTime:       workTimer,
-			ShortBreakTime: shortBreakTimer,
-			LongBreakTime: longBreakTimer,
-		}
-		got := struct {
-			WorkTime       int
-			ShortBreakTime int
-			LongBreakTime  int
-		}{
-			WorkTime:       sleeper.WorkTime,
-			ShortBreakTime: sleeper.ShortBreakTime,
-			LongBreakTime:  sleeper.LongBreakTime,
-		}
+		want := [...]int{workTimer, shortBreakTimer, longBreakTimer}
+		got := [...]int{sleeper.WorkTime, sleeper.ShortBreakTime, sleeper.LongBreakTime}
 
 		if !reflect.DeepEqual(want, got) {
-			t.Errorf("expect %v, got %v", want, got)
+			t.Errorf("want %v, got %v", want, got)
 		}
 	})
 
@@ -123,29 +92,30 @@ func TestPomodoro(t *testing.T) {
 		got := sleeper.CallCount
 
 		if !reflect.DeepEqual(want, got) {
-			t.Errorf("expect %v, got %v", want, got)
+			t.Errorf("want %v, got %v", want, got)
 		}
 	})
 
-	t.Run("Testing the order of the pomodoro call", func(t *testing.T) {
+	t.Run("should execute pomodoro cycles in correct order: work -> short breaks -> long break after last cycle", func(t *testing.T) {
 		sleeper := SpySleeper{Calls: make([]string, 0)}
 
 		Pomodoro(&sleeper, 4, 3, 1)
 
 		want := []string{
-			work,
-			shortBreak,
-			work,
-			shortBreak,
-			work,
-			shortBreak,
-			work,
-			longBreak,
+			WORK,
+			SHORT_BREAK,
+			WORK,
+			SHORT_BREAK,
+			WORK,
+			SHORT_BREAK,
+			WORK,
+			LONG_BREAK,
 		}
 
-		if !reflect.DeepEqual(want, sleeper.Calls) {
-			t.Errorf("wanted calls %v got %v", want, sleeper.Calls)
-		}
+		got := sleeper.Calls
 
+		if !reflect.DeepEqual(want, got) {
+			t.Errorf("want %v, got %v", want, got)
+		}
 	})
 }
