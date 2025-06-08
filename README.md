@@ -1,7 +1,7 @@
 # ⏲️ Gomodoro
+![photo_2025-06-08_12-35-48-removebg-preview](https://github.com/user-attachments/assets/9bdb38f8-423e-48c5-af2a-c5295197b644)
 
 A lightning-fast Pomodoro timer for developers, built in Go.  
-_"Go Focus. Go Break. Repeat."_
 
 ---
 
