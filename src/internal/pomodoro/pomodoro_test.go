@@ -51,7 +51,7 @@ func (s *SpySleeper) LongBreak(minutes int) {
 }
 
 func TestPomodoro(t *testing.T) {
-	t.Run("it should use default params when no args are supplied", func(t *testing.T) {
+	t.Run("it should use default params when no flags are supplied", func(t *testing.T) {
 		sleeper := SpySleeper{}
 
 		Pomodoro(&sleeper, 0, 0, 0)
@@ -64,7 +64,7 @@ func TestPomodoro(t *testing.T) {
 		}
 	})
 
-	t.Run("it should use custom params when args are supplied", func(t *testing.T) {
+	t.Run("it should use custom params when flags are supplied", func(t *testing.T) {
 		sleeper := SpySleeper{}
 		workTimer := 10
 		shortBreakTimer := 15
@@ -81,7 +81,7 @@ func TestPomodoro(t *testing.T) {
 	})
 
 	// Already done by flag module
-	// t.Run("it should throw a error when invalid args are supplid", func(t *testing.T) {})
+	// t.Run("it should throw a error when invalid flags are supplid", func(t *testing.T) {})
 
 	t.Run("it should run 4x work and 3x short break before taking 1 long break", func(t *testing.T) {
 		sleeper := SpySleeper{}
