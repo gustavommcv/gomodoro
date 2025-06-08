@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/gustavommcv/gomodoro/src/pkg/notify"
 	"github.com/gustavommcv/gomodoro/src/pkg/progressbar"
 )
 
@@ -23,19 +24,25 @@ type DefaultSleeper struct {
 	ProgressWriter io.Writer
 }
 
+// TODO
+// Pause execution when a notification is sent
+// Need to wait for user interaction
 func (d *DefaultSleeper) Work(minutes int) {
 	fmt.Printf("\nWorking for %d minutes\n", minutes)
 	d.showProgress(minutes, "Work")
+	notify.Notify("Work Finished")
 }
 
 func (d *DefaultSleeper) ShortBreak(minutes int) {
 	fmt.Printf("\nShort Break for %d minutes\n", minutes)
 	d.showProgress(minutes, "Short Break")
+	notify.Notify("Short break Finished")
 }
 
 func (d *DefaultSleeper) LongBreak(minutes int) {
 	fmt.Printf("\nLong Break for %d minutes\n", minutes)
 	d.showProgress(minutes, "Long Break")
+	notify.Notify("Long break Finished")
 }
 
 func (d *DefaultSleeper) showProgress(totalMinutes int, label string) {
