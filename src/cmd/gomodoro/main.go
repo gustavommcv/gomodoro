@@ -24,7 +24,7 @@ func main() {
 }
 
 func runPomodoro(work, sbreak, lbreak int) {
-	sleeper := pomodoro.DefaultSleeper{ProgressWriter: os.Stdout}
+	sleeper := pomodoro.DefaultSleeper{ProgressWriter: os.Stdout, InputReader: os.Stdin}
 	pomodoro.Pomodoro(&sleeper, work, sbreak, lbreak)
 }
 

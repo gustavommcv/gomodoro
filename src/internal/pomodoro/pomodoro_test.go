@@ -23,6 +23,8 @@ type CallCount struct {
 	LongBreak  int
 }
 
+func (s *SpySleeper) WaitForUser() {}
+
 func (s *SpySleeper) Work(minutes int) {
 	if s.WorkTime == 0 {
 		s.WorkTime = minutes

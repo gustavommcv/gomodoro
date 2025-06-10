@@ -18,10 +18,12 @@ type Sleeper interface {
 	Work(minutes int)
 	ShortBreak(minutes int)
 	LongBreak(minutes int)
+	WaitForUser()
 }
 
 type DefaultSleeper struct {
 	ProgressWriter io.Writer
+	InputReader    io.Reader
 }
 
 // TODO
@@ -30,19 +32,34 @@ type DefaultSleeper struct {
 func (d *DefaultSleeper) Work(minutes int) {
 	fmt.Printf("\nWorking for %d minutes\n", minutes)
 	d.showProgress(minutes, "Work")
-	notify.Notify("Work Finished")
+	notify.Notify("Work Finished, press enter in the terminal to continue")
+	d.WaitForUser()
 }
 
 func (d *DefaultSleeper) ShortBreak(minutes int) {
 	fmt.Printf("\nShort Break for %d minutes\n", minutes)
 	d.showProgress(minutes, "Short Break")
-	notify.Notify("Short break Finished")
+	notify.Notify("Short break Finished, press enter in the terminal to continue")
+	d.WaitForUser()
 }
 
 func (d *DefaultSleeper) LongBreak(minutes int) {
 	fmt.Printf("\nLong Break for %d minutes\n", minutes)
 	d.showProgress(minutes, "Long Break")
-	notify.Notify("Long break Finished")
+	notify.Notify("Long break Finished, press enter in the terminal to continue")
+	d.WaitForUser()
+}
+
+func (d *DefaultSleeper) WaitForUser() {
+	fmt.Fprint(d.ProgressWriter, "\nPress Enter to continue...")
+
+	buf := make([]byte, 1)
+	for {
+		_, err := d.InputReader.Read(buf)
+		if err != nil || buf[0] == '\n' {
+			break
+		}
+	}
 }
 
 func (d *DefaultSleeper) showProgress(totalMinutes int, label string) {
