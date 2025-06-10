@@ -3,13 +3,8 @@
 
 A lightning-fast Pomodoro timer for developers, built in Go.  
 
----
-
 ## Project Status
-
 > Currently in development – some features are still being implemented.
-
----
 
 ## Usage
 
@@ -25,7 +20,7 @@ $ gomodoro start
 # Defaults: 25 min work / 5 min short break / 15 min long break
 ```
 
-### Flags
+## Flags
 
 | Flag       | Description                     | Default |
 | ---------- | ------------------------------- | ------- |
