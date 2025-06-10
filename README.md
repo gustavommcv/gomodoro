@@ -1,48 +1,31 @@
-# ⏲️ Gomodoro
-![photo_2025-06-08_12-35-48-removebg-preview](https://github.com/user-attachments/assets/9bdb38f8-423e-48c5-af2a-c5295197b644)
+# Gomodoro
+<img src="https://github.com/user-attachments/assets/9bdb38f8-423e-48c5-af2a-c5295197b644" width="200" alt="gomodoro-logo">
 
 A lightning-fast Pomodoro timer for developers, built in Go.  
 
 ---
 
-## 🚧 Project Status
+## Project Status
 
-> 🚧 Currently in development – some features are still being implemented.
-
----
-
-## ❓ Why Gomodoro?
-
-✔️ **Blazing fast** – native Go CLI performance  
-✔️ **Minimalist design** – no clutter, just focus  
-✔️ **Fully customizable** – tweak your work/break durations  
-✔️ **Productivity stats** – track your streaks (coming soon)  
-✔️ **Cross-platform** – works on macOS, Linux, and Windows
+> Currently in development – some features are still being implemented.
 
 ---
 
-## ✨ Planned Features
-- ⏱️ **Flexible timers** – Set custom durations with flags like `--work`, `--sbreak`, and `--lbreak`
-- 🔁 **Auto-cycles** – Automatically take a long break after 4 work sessions
-- 🔔 **Desktop notifications** – Visual alerts (e.g. `notify-send`) on timer completion
-- 📟 **Theming** – Retro terminal progress bars with multiple themes
-
----
-
-## 🛠️ Usage
+## Usage
 
 ```bash
-$ gomodoro --work 25 --sbreak 5 --lbreak 15
+# Usage example (note: 'start' command not implemented yet - omit it for now):
+$ gomodoro start --work 25 --sbreak 5 --lbreak 15
 ```
 
 Or simply use the defaults:
 
 ```bash
-$ gomodoro
+$ gomodoro start
 # Defaults: 25 min work / 5 min short break / 15 min long break
 ```
 
-### ⚙️ Flags
+### Flags
 
 | Flag       | Description                     | Default |
 | ---------- | ------------------------------- | ------- |
@@ -50,7 +33,7 @@ $ gomodoro
 | `--sbreak` | Short break duration (minutes)  | 5       |
 | `--lbreak` | Long break duration (minutes)   | 15      |
 
-## 📦 Installation
+## Installation
 
 ### Using `go install`
 
@@ -68,9 +51,10 @@ go build -o gomodoro
 
 ## 📌 Roadmap
 
-- [ ] Desktop notifications
+- [ ] Interactive Desktop notifications
 - [ ] Config file support (`~/.gomodoro.yaml`)
-- [ ] Terminal color themes
+- [ ] Customizable Terminal color themes
 - [ ] Sound alerts
 - [ ] Infinite loop support (`--loop`)
+- [ ] Lap count
 - [ ] Pause/resume functionality
