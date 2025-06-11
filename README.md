@@ -52,4 +52,4 @@ go build -o gomodoro
 - [ ] Sound alerts
 - [ ] Infinite loop support (`--loop`)
 - [ ] Lap count
-- [ ] Pause/resume functionality
+- [ ] Pause/resume/skip functionality
