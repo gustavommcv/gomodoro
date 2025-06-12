@@ -1,7 +1,7 @@
 # Gomodoro
 <img src="https://github.com/user-attachments/assets/9bdb38f8-423e-48c5-af2a-c5295197b644" width="200" alt="gomodoro-logo">
 
-A lightning-fast Pomodoro timer for developers, built in Go.  
+**A lightning-fast CLI Pomodoro timer for developers, built in Go.** 
 
 ## Project Status
 > Currently in development – some features are still being implemented.
