@@ -27,7 +27,6 @@ type DefaultSleeper struct {
 }
 
 func (d *DefaultSleeper) Work(minutes int) {
-	beep.SendNotification("Work Finished", "press enter in the terminal to continue")
 	fmt.Printf("\nWorking for %d minutes\n", minutes)
 	d.showProgress(minutes, "Work")
 	beep.SendNotification("Work Finished", "press enter in the terminal to continue")
