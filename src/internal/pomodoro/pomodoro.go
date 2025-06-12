@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/gustavommcv/gomodoro/src/pkg/notify"
+	"github.com/gustavommcv/gomodoro/src/pkg/beep"
 	"github.com/gustavommcv/gomodoro/src/pkg/progressbar"
 )
 
@@ -26,27 +26,25 @@ type DefaultSleeper struct {
 	InputReader    io.Reader
 }
 
-// TODO
-// Pause execution when a notification is sent
-// Need to wait for user interaction
 func (d *DefaultSleeper) Work(minutes int) {
+	beep.SendNotification("Work Finished", "press enter in the terminal to continue")
 	fmt.Printf("\nWorking for %d minutes\n", minutes)
 	d.showProgress(minutes, "Work")
-	notify.Notify("Work Finished, press enter in the terminal to continue")
+	beep.SendNotification("Work Finished", "press enter in the terminal to continue")
 	d.WaitForUser()
 }
 
 func (d *DefaultSleeper) ShortBreak(minutes int) {
 	fmt.Printf("\nShort Break for %d minutes\n", minutes)
 	d.showProgress(minutes, "Short Break")
-	notify.Notify("Short break Finished, press enter in the terminal to continue")
+	beep.SendNotification("Short break Finished", "press enter in the terminal to continue")
 	d.WaitForUser()
 }
 
 func (d *DefaultSleeper) LongBreak(minutes int) {
 	fmt.Printf("\nLong Break for %d minutes\n", minutes)
 	d.showProgress(minutes, "Long Break")
-	notify.Notify("Long break Finished, press enter in the terminal to continue")
+	beep.SendNotification("Long break Finished", "press enter in the terminal to continue")
 	d.WaitForUser()
 }
 
