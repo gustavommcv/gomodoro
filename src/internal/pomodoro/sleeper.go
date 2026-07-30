@@ -11,8 +11,9 @@ import (
 )
 
 // DefaultSleeper is the real, terminal-facing Sleeper: it renders a
-// progress bar roughly once per second, sends a desktop notification at the
-// end of a phase, and waits for the user to press Enter before returning.
+// progress bar roughly once per second, alerts the user at the end of a
+// phase (desktop notification and/or a short sound, each independently
+// toggleable), and waits for the user to press Enter before returning.
 type DefaultSleeper struct {
 	ProgressWriter io.Writer
 	ErrWriter      io.Writer
@@ -25,17 +26,30 @@ type DefaultSleeper struct {
 	// Notify sends a desktop notification; if nil, notifications are skipped.
 	// Tests inject a stub so no real OS notification is fired.
 	Notify func(title, message string) error
+
+	// PlaySound plays a short alert sound; if nil, the sound is skipped.
+	// Tests inject a stub so no real OS sound is fired.
+	PlaySound func() error
+
+	// NotifyEnabled and SoundEnabled are independent: disabling one must
+	// not disable the other.
+	NotifyEnabled bool
+	SoundEnabled  bool
 }
 
 // NewDefaultSleeper wires a DefaultSleeper for real use: the real clock and
-// real desktop notifications.
-func NewDefaultSleeper(progress, errOut io.Writer, input io.Reader) *DefaultSleeper {
+// real desktop notifications and alert sounds, gated by notifyEnabled and
+// soundEnabled respectively.
+func NewDefaultSleeper(progress, errOut io.Writer, input io.Reader, notifyEnabled, soundEnabled bool) *DefaultSleeper {
 	return &DefaultSleeper{
 		ProgressWriter: progress,
 		ErrWriter:      errOut,
 		InputReader:    input,
 		Clock:          realClock{},
 		Notify:         beep.SendNotification,
+		PlaySound:      beep.PlaySound,
+		NotifyEnabled:  notifyEnabled,
+		SoundEnabled:   soundEnabled,
 	}
 }
 
@@ -72,13 +86,26 @@ func (d *DefaultSleeper) runPhase(ctx context.Context, minutes int, label, notif
 		return err
 	}
 
-	if d.Notify != nil {
+	d.sendAlerts(notifyTitle)
+
+	return d.WaitForUser(ctx)
+}
+
+// sendAlerts fires the notification and sound independently: either can
+// fail, or be disabled, without affecting the other. Both are best-effort —
+// a failure is a warning on stderr, never a reason to stop the Pomodoro.
+func (d *DefaultSleeper) sendAlerts(notifyTitle string) {
+	if d.NotifyEnabled && d.Notify != nil {
 		if err := d.Notify(notifyTitle, "press enter in the terminal to continue"); err != nil {
 			fmt.Fprintf(d.errWriter(), "gomodoro: warning: %v\n", err)
 		}
 	}
 
-	return d.WaitForUser(ctx)
+	if d.SoundEnabled && d.PlaySound != nil {
+		if err := d.PlaySound(); err != nil {
+			fmt.Fprintf(d.errWriter(), "gomodoro: warning: %v\n", err)
+		}
+	}
 }
 
 // WaitForUser blocks until the user presses Enter, or ctx is cancelled,

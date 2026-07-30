@@ -38,6 +38,9 @@ func newTestSleeper(clock Clock) (*DefaultSleeper, *bytes.Buffer, *bytes.Buffer)
 		InputReader:    strings.NewReader("\n"),
 		Clock:          clock,
 		Notify:         func(title, message string) error { return nil },
+		PlaySound:      func() error { return nil },
+		NotifyEnabled:  true,
+		SoundEnabled:   true,
 	}
 	return sleeper, &progress, &errs
 }
@@ -149,12 +152,13 @@ func TestDefaultSleeperNotificationFailure(t *testing.T) {
 }
 
 func TestDefaultSleeperPhaseCancellation(t *testing.T) {
-	t.Run("Work stops without sending a notification or waiting for input when cancelled", func(t *testing.T) {
+	t.Run("Work stops without sending any alert or waiting for input when cancelled", func(t *testing.T) {
 		clock := newFakeClock()
 		sleeper, _, _ := newTestSleeper(clock)
 
-		notified := false
+		notified, played := false, false
 		sleeper.Notify = func(title, message string) error { notified = true; return nil }
+		sleeper.PlaySound = func() error { played = true; return nil }
 		sleeper.InputReader = &blockingReader{} // would hang forever if reached
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -167,6 +171,131 @@ func TestDefaultSleeperPhaseCancellation(t *testing.T) {
 		}
 		if notified {
 			t.Error("did not expect a notification to be sent for a cancelled phase")
+		}
+		if played {
+			t.Error("did not expect a sound to be played for a cancelled phase")
+		}
+	})
+}
+
+func TestDefaultSleeperAlerts(t *testing.T) {
+	t.Run("both enabled: notify and sound are each called exactly once", func(t *testing.T) {
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		var notifyCalls, soundCalls int
+		sleeper.Notify = func(title, message string) error { notifyCalls++; return nil }
+		sleeper.PlaySound = func() error { soundCalls++; return nil }
+		sleeper.NotifyEnabled = true
+		sleeper.SoundEnabled = true
+
+		if err := sleeper.Work(context.Background(), 1); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if notifyCalls != 1 {
+			t.Errorf("want 1 notify call, got %d", notifyCalls)
+		}
+		if soundCalls != 1 {
+			t.Errorf("want 1 sound call, got %d", soundCalls)
+		}
+	})
+
+	t.Run("only the notification is enabled", func(t *testing.T) {
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		var notifyCalls, soundCalls int
+		sleeper.Notify = func(title, message string) error { notifyCalls++; return nil }
+		sleeper.PlaySound = func() error { soundCalls++; return nil }
+		sleeper.NotifyEnabled = true
+		sleeper.SoundEnabled = false
+
+		if err := sleeper.Work(context.Background(), 1); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if notifyCalls != 1 {
+			t.Errorf("want the notification to be sent, got %d calls", notifyCalls)
+		}
+		if soundCalls != 0 {
+			t.Errorf("want the sound to be skipped, got %d calls", soundCalls)
+		}
+	})
+
+	t.Run("only the sound is enabled", func(t *testing.T) {
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		var notifyCalls, soundCalls int
+		sleeper.Notify = func(title, message string) error { notifyCalls++; return nil }
+		sleeper.PlaySound = func() error { soundCalls++; return nil }
+		sleeper.NotifyEnabled = false
+		sleeper.SoundEnabled = true
+
+		if err := sleeper.Work(context.Background(), 1); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if notifyCalls != 0 {
+			t.Errorf("want the notification to be skipped, got %d calls", notifyCalls)
+		}
+		if soundCalls != 1 {
+			t.Errorf("want the sound to be played, got %d calls", soundCalls)
+		}
+	})
+
+	t.Run("both disabled: neither alert is called", func(t *testing.T) {
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		var notifyCalls, soundCalls int
+		sleeper.Notify = func(title, message string) error { notifyCalls++; return nil }
+		sleeper.PlaySound = func() error { soundCalls++; return nil }
+		sleeper.NotifyEnabled = false
+		sleeper.SoundEnabled = false
+
+		if err := sleeper.Work(context.Background(), 1); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if notifyCalls != 0 || soundCalls != 0 {
+			t.Errorf("want no alerts, got notifyCalls=%d soundCalls=%d", notifyCalls, soundCalls)
+		}
+	})
+
+	t.Run("a notification failure does not prevent the sound alert", func(t *testing.T) {
+		sleeper, _, errs := newTestSleeper(newFakeClock())
+		soundCalled := false
+		sleeper.Notify = func(title, message string) error { return errors.New("no notification daemon") }
+		sleeper.PlaySound = func() error { soundCalled = true; return nil }
+
+		if err := sleeper.Work(context.Background(), 1); err != nil {
+			t.Fatalf("a notification failure should not fail the phase, got: %v", err)
+		}
+		if !soundCalled {
+			t.Error("expected the sound alert to still play after a notification failure")
+		}
+		if !strings.Contains(errs.String(), "no notification daemon") {
+			t.Errorf("expected the notification error on stderr, got: %q", errs.String())
+		}
+	})
+
+	t.Run("a sound failure does not invalidate the notification that already succeeded", func(t *testing.T) {
+		sleeper, _, errs := newTestSleeper(newFakeClock())
+		notifyCalled := false
+		sleeper.Notify = func(title, message string) error { notifyCalled = true; return nil }
+		sleeper.PlaySound = func() error { return errors.New("no audio device") }
+
+		if err := sleeper.Work(context.Background(), 1); err != nil {
+			t.Fatalf("a sound failure should not fail the phase, got: %v", err)
+		}
+		if !notifyCalled {
+			t.Error("expected the notification to have been sent")
+		}
+		if !strings.Contains(errs.String(), "no audio device") {
+			t.Errorf("expected the sound error on stderr, got: %q", errs.String())
+		}
+	})
+
+	t.Run("alert warnings never reach the progress writer", func(t *testing.T) {
+		sleeper, progress, _ := newTestSleeper(newFakeClock())
+		sleeper.Notify = func(title, message string) error { return errors.New("notify-boom") }
+		sleeper.PlaySound = func() error { return errors.New("sound-boom") }
+
+		if err := sleeper.Work(context.Background(), 1); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.Contains(progress.String(), "boom") {
+			t.Errorf("alert warnings leaked into progress output: %q", progress.String())
 		}
 	})
 }

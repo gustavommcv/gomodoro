@@ -4,16 +4,17 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"strings"
 	"testing"
 )
 
 func TestParseArgs(t *testing.T) {
-	t.Run("no arguments uses the documented defaults", func(t *testing.T) {
+	t.Run("no arguments uses the documented defaults, including notify=true and sound=true", func(t *testing.T) {
 		opts, err := parseArgs(nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		want := options{work: 25, sbreak: 5, lbreak: 15}
+		want := options{work: 25, sbreak: 5, lbreak: 15, notify: true, sound: true}
 		if opts != want {
 			t.Errorf("got %+v, want %+v", opts, want)
 		}
@@ -24,7 +25,7 @@ func TestParseArgs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		want := options{work: 10, sbreak: 2, lbreak: 3}
+		want := options{work: 10, sbreak: 2, lbreak: 3, notify: true, sound: true}
 		if opts != want {
 			t.Errorf("got %+v, want %+v", opts, want)
 		}
@@ -35,7 +36,7 @@ func TestParseArgs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		want := options{work: 25, sbreak: 5, lbreak: 15}
+		want := options{work: 25, sbreak: 5, lbreak: 15, notify: true, sound: true}
 		if opts != want {
 			t.Errorf("got %+v, want %+v", opts, want)
 		}
@@ -46,7 +47,7 @@ func TestParseArgs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		want := options{work: 10, sbreak: 2, lbreak: 3}
+		want := options{work: 10, sbreak: 2, lbreak: 3, notify: true, sound: true}
 		if opts != want {
 			t.Errorf("got %+v, want %+v", opts, want)
 		}
@@ -119,6 +120,183 @@ func TestParseArgs(t *testing.T) {
 		_, err := parseArgs([]string{"-h"})
 		if !errors.Is(err, flag.ErrHelp) {
 			t.Fatalf("expected flag.ErrHelp, got %v", err)
+		}
+	})
+
+	t.Run("-notify=false disables notification but leaves sound enabled", func(t *testing.T) {
+		opts, err := parseArgs([]string{"-notify=false"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if opts.notify {
+			t.Error("want notify=false")
+		}
+		if !opts.sound {
+			t.Error("want sound to remain true; disabling notify must not disable sound")
+		}
+	})
+
+	t.Run("-notify=true is accepted explicitly", func(t *testing.T) {
+		opts, err := parseArgs([]string{"-notify=true"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !opts.notify {
+			t.Error("want notify=true")
+		}
+	})
+
+	t.Run("-sound=false disables sound but leaves notification enabled", func(t *testing.T) {
+		opts, err := parseArgs([]string{"-sound=false"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if opts.sound {
+			t.Error("want sound=false")
+		}
+		if !opts.notify {
+			t.Error("want notify to remain true; disabling sound must not disable notify")
+		}
+	})
+
+	t.Run("-sound=true is accepted explicitly", func(t *testing.T) {
+		opts, err := parseArgs([]string{"-sound=true"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !opts.sound {
+			t.Error("want sound=true")
+		}
+	})
+
+	t.Run("both alerts disabled together", func(t *testing.T) {
+		opts, err := parseArgs([]string{"-notify=false", "-sound=false"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if opts.notify || opts.sound {
+			t.Errorf("want both disabled, got notify=%v sound=%v", opts.notify, opts.sound)
+		}
+	})
+
+	t.Run("both alerts explicitly enabled together", func(t *testing.T) {
+		opts, err := parseArgs([]string{"-notify=true", "-sound=true"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !opts.notify || !opts.sound {
+			t.Errorf("want both enabled, got notify=%v sound=%v", opts.notify, opts.sound)
+		}
+	})
+
+	t.Run("alert flags work after the start subcommand too", func(t *testing.T) {
+		opts, err := parseArgs([]string{"start", "-sound=false", "-notify=false"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if opts.notify || opts.sound {
+			t.Errorf("want both disabled, got notify=%v sound=%v", opts.notify, opts.sound)
+		}
+	})
+
+	t.Run("an invalid boolean value is rejected", func(t *testing.T) {
+		_, err := parseArgs([]string{"-notify=maybe"})
+		if err == nil {
+			t.Fatal("expected an error for an invalid boolean value")
+		}
+	})
+
+	t.Run("help lists both alert flags", func(t *testing.T) {
+		var buf bytes.Buffer
+		printUsage(&buf)
+		out := buf.String()
+		if !strings.Contains(out, "-notify") {
+			t.Error("expected usage text to document -notify")
+		}
+		if !strings.Contains(out, "-sound") {
+			t.Error("expected usage text to document -sound")
+		}
+	})
+}
+
+func TestOptionalBool(t *testing.T) {
+	t.Run("an unset flag resolves to the given default", func(t *testing.T) {
+		var b optionalBool
+		if got := b.resolve(true); got != true {
+			t.Errorf("got %v, want true", got)
+		}
+		if got := b.resolve(false); got != false {
+			t.Errorf("got %v, want false", got)
+		}
+	})
+
+	t.Run("an explicitly-set flag overrides the default in either direction", func(t *testing.T) {
+		var t1 optionalBool
+		if err := t1.Set("false"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := t1.resolve(true); got != false {
+			t.Errorf("explicit false must override default true, got %v", got)
+		}
+
+		var t2 optionalBool
+		if err := t2.Set("true"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := t2.resolve(false); got != true {
+			t.Errorf("explicit true must override default false, got %v", got)
+		}
+	})
+
+	t.Run("Set rejects a non-boolean value", func(t *testing.T) {
+		var b optionalBool
+		if err := b.Set("maybe"); err == nil {
+			t.Fatal("expected an error for a non-boolean value")
+		}
+	})
+
+	t.Run("is a bool-shaped flag for the flag package's -flag (no =value) form", func(t *testing.T) {
+		var b optionalBool
+		if !b.IsBoolFlag() {
+			t.Error("want IsBoolFlag() to be true")
+		}
+	})
+}
+
+func TestResolveOptions(t *testing.T) {
+	// This is the seam a future config file slots into: resolveOptions is
+	// the one place that decides precedence, so parseArgs itself never
+	// needs to change when a config layer is added between "explicit flag"
+	// and "application default".
+	t.Run("explicit CLI flags take precedence over defaults", func(t *testing.T) {
+		var notify, sound optionalBool
+		if err := notify.Set("false"); err != nil {
+			t.Fatal(err)
+		}
+		if err := sound.Set("true"); err != nil {
+			t.Fatal(err)
+		}
+
+		got := resolveOptions(25, 5, 15, notify, sound)
+
+		if got.notify != false {
+			t.Errorf("want notify=false (explicit), got %v", got.notify)
+		}
+		if got.sound != true {
+			t.Errorf("want sound=true (explicit), got %v", got.sound)
+		}
+	})
+
+	t.Run("unset flags fall back to the application defaults", func(t *testing.T) {
+		var notify, sound optionalBool
+
+		got := resolveOptions(25, 5, 15, notify, sound)
+
+		if got.notify != true {
+			t.Errorf("want notify to fall back to the default (true), got %v", got.notify)
+		}
+		if got.sound != true {
+			t.Errorf("want sound to fall back to the default (true), got %v", got.sound)
 		}
 	})
 }

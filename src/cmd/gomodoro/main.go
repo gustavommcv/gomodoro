@@ -42,7 +42,7 @@ func run(args []string, stdout, stderr io.Writer, stdin io.Reader) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	sleeper := pomodoro.NewDefaultSleeper(stdout, stderr, stdin)
+	sleeper := pomodoro.NewDefaultSleeper(stdout, stderr, stdin, opts.notify, opts.sound)
 
 	err = pomodoro.Pomodoro(ctx, sleeper, opts.work, opts.sbreak, opts.lbreak)
 	if err != nil {
