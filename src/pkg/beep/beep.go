@@ -14,9 +14,12 @@ func init() {
 	beeep.AppName = "Gomodoro"
 }
 
-func SendNotification(title, message string) {
-	err := beeep.Alert(title, message, iconData)
-	if err != nil {
-		fmt.Printf("Error in notification: %v\n", err)
+// SendNotification shows a desktop notification with the Gomodoro icon. The
+// caller decides how to report a failure; this function never writes to the
+// terminal itself.
+func SendNotification(title, message string) error {
+	if err := beeep.Alert(title, message, iconData); err != nil {
+		return fmt.Errorf("send notification: %w", err)
 	}
+	return nil
 }

@@ -1,103 +1,60 @@
+// Package pomodoro implements the Gomodoro cycle rules: a lap of four work
+// phases, with a short break after each of the first three and a long break
+// after the fourth.
 package pomodoro
 
 import (
+	"context"
 	"fmt"
-	"io"
-	"time"
-
-	"github.com/gustavommcv/gomodoro/src/pkg/beep"
-	"github.com/gustavommcv/gomodoro/src/pkg/progressbar"
 )
 
-const DEFAULT_WORK_TIMER int = 25
-const DEFAULT_SHORT_BREAK int = 5
-const DEFAULT_LONG_BREAK int = 15
-const CICLES_PER_LAP int = 4
+const (
+	DefaultWorkMinutes       = 25
+	DefaultShortBreakMinutes = 5
+	DefaultLongBreakMinutes  = 15
+	CyclesPerLap             = 4
+)
 
+// Sleeper runs a single Pomodoro phase, or waits for the user to confirm
+// moving on to the next one. DefaultSleeper is the real, terminal-facing
+// implementation; tests use a smaller double to verify cycle ordering
+// without touching the terminal, the clock, or the notification system.
 type Sleeper interface {
-	Work(minutes int)
-	ShortBreak(minutes int)
-	LongBreak(minutes int)
-	WaitForUser()
+	Work(ctx context.Context, minutes int) error
+	ShortBreak(ctx context.Context, minutes int) error
+	LongBreak(ctx context.Context, minutes int) error
+	WaitForUser(ctx context.Context) error
 }
 
-type DefaultSleeper struct {
-	ProgressWriter io.Writer
-	InputReader    io.Reader
-}
+// Pomodoro runs one lap: four work phases, a short break after each of the
+// first three, and a long break after the fourth. It returns as soon as a
+// phase returns an error, including context cancellation.
+func Pomodoro(ctx context.Context, sleeper Sleeper, work, shortBreak, longBreak int) error {
+	if work <= 0 {
+		return fmt.Errorf("work duration must be greater than zero, got %d", work)
+	}
+	if shortBreak <= 0 {
+		return fmt.Errorf("short break duration must be greater than zero, got %d", shortBreak)
+	}
+	if longBreak <= 0 {
+		return fmt.Errorf("long break duration must be greater than zero, got %d", longBreak)
+	}
 
-func (d *DefaultSleeper) Work(minutes int) {
-	fmt.Printf("\nWorking for %d minutes\n", minutes)
-	d.showProgress(minutes, "Work")
-	beep.SendNotification("Work Finished", "press enter in the terminal to continue")
-	d.WaitForUser()
-}
-
-func (d *DefaultSleeper) ShortBreak(minutes int) {
-	fmt.Printf("\nShort Break for %d minutes\n", minutes)
-	d.showProgress(minutes, "Short Break")
-	beep.SendNotification("Short break Finished", "press enter in the terminal to continue")
-	d.WaitForUser()
-}
-
-func (d *DefaultSleeper) LongBreak(minutes int) {
-	fmt.Printf("\nLong Break for %d minutes\n", minutes)
-	d.showProgress(minutes, "Long Break")
-	beep.SendNotification("Long break Finished", "press enter in the terminal to continue")
-	d.WaitForUser()
-}
-
-func (d *DefaultSleeper) WaitForUser() {
-	fmt.Fprint(d.ProgressWriter, "\nPress Enter to continue...")
-
-	buf := make([]byte, 1)
-	for {
-		_, err := d.InputReader.Read(buf)
-		if err != nil || buf[0] == '\n' {
-			break
+	for cycle := 1; cycle <= CyclesPerLap; cycle++ {
+		if err := sleeper.Work(ctx, work); err != nil {
+			return err
 		}
-	}
-}
 
-func (d *DefaultSleeper) showProgress(totalMinutes int, label string) {
-	const resolution = 60
-	totalSeconds := totalMinutes * 60
-
-	for i := 1; i <= totalSeconds; i++ {
-		fmt.Fprint(d.ProgressWriter, "\r")
-
-		progressbar.ProgressBar(d.ProgressWriter, float64(i), float64(totalSeconds))
-
-		remaining := totalSeconds - i
-		fmt.Fprintf(d.ProgressWriter, " - %s: %02d:%02d remaining",
-			label,
-			remaining/60,
-			remaining%60)
-
-		time.Sleep(1 * time.Second)
-	}
-	fmt.Fprintln(d.ProgressWriter)
-}
-
-func Pomodoro(sleeper Sleeper, work, shortBreak, longBreak int) {
-	if work == 0 {
-		work = DEFAULT_WORK_TIMER
-	}
-
-	if shortBreak == 0 {
-		shortBreak = DEFAULT_SHORT_BREAK
-	}
-
-	if longBreak == 0 {
-		longBreak = DEFAULT_LONG_BREAK
-	}
-
-	for actualCicle := 1; actualCicle <= CICLES_PER_LAP; actualCicle++ {
-		sleeper.Work(work)
-		if actualCicle == CICLES_PER_LAP {
-			sleeper.LongBreak(longBreak)
+		if cycle == CyclesPerLap {
+			if err := sleeper.LongBreak(ctx, longBreak); err != nil {
+				return err
+			}
 		} else {
-			sleeper.ShortBreak(shortBreak)
+			if err := sleeper.ShortBreak(ctx, shortBreak); err != nil {
+				return err
+			}
 		}
 	}
+
+	return nil
 }

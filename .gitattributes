@@ -1,0 +1,9 @@
+# Normalize line endings so `gofmt` and diffs stay stable across
+# Windows/Linux/macOS checkouts.
+* text=auto eol=lf
+
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+
+*.png binary

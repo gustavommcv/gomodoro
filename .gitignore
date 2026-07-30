@@ -1,0 +1,11 @@
+# Local Claude Code settings (machine-specific, not for version control)
+.claude/settings.local.json
+
+# Build artifacts
+/gomodoro
+/gomodoro.exe
+*.exe
+*.test
+
+# Logs
+*.log

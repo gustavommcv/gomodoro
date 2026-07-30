@@ -1,57 +1,58 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 
 	"github.com/gustavommcv/gomodoro/src/internal/pomodoro"
 )
 
-func main() {
-	work := flag.Int("work", pomodoro.DEFAULT_WORK_TIMER, "Work duration in minutes")
-	sbreak := flag.Int("sbreak", pomodoro.DEFAULT_SHORT_BREAK, "Short break duration in minutes")
-	lbreak := flag.Int("lbreak", pomodoro.DEFAULT_LONG_BREAK, "Long break duration in minutes")
+const (
+	exitOK          = 0
+	exitUsageError  = 2
+	exitRuntimeErr  = 1
+	exitInterrupted = 130 // conventional 128+SIGINT
+)
 
-	// Custom usage message
-	flag.Usage = func() {
-		printCustomUsage()
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, os.Stdin))
+}
+
+// run parses arguments, wires Ctrl+C cancellation, and executes one
+// Pomodoro lap. It contains no os.Exit call so it can be exercised directly
+// from tests with in-memory buffers; main is the only place that exits the
+// process.
+func run(args []string, stdout, stderr io.Writer, stdin io.Reader) int {
+	opts, err := parseArgs(args)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			printUsage(stdout)
+			return exitOK
+		}
+		fmt.Fprintf(stderr, "gomodoro: %v\n", err)
+		printUsage(stderr)
+		return exitUsageError
 	}
 
-	flag.Parse()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
-	runPomodoro(*work, *sbreak, *lbreak)
-}
+	sleeper := pomodoro.NewDefaultSleeper(stdout, stderr, stdin)
 
-func runPomodoro(work, sbreak, lbreak int) {
-	sleeper := pomodoro.DefaultSleeper{ProgressWriter: os.Stdout, InputReader: os.Stdin}
-	pomodoro.Pomodoro(&sleeper, work, sbreak, lbreak)
-}
+	err = pomodoro.Pomodoro(ctx, sleeper, opts.work, opts.sbreak, opts.lbreak)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			fmt.Fprintln(stderr, "\ngomodoro: interrupted, stopping.")
+			return exitInterrupted
+		}
+		fmt.Fprintf(stderr, "gomodoro: %v\n", err)
+		return exitRuntimeErr
+	}
 
-func printCustomUsage() {
-	fmt.Printf(`
-Gomodoro - Pomodoro Timer CLI
-
-Usage:
-  %s [flags]
-
-Flags:
-  -work int      Work duration in minutes (default %d)
-  -sbreak int    Short break duration in minutes (default %d) 
-  -lbreak int    Long break duration in minutes (default %d)
-
-Examples:
-  # Start with default values (%d/%d/%d)
-  %s
-  
-  # Custom durations
-  %s -work=50 -sbreak=10
-  %s -work=25 -sbreak=5 -lbreak=20
-`,
-		os.Args[0],
-		pomodoro.DEFAULT_WORK_TIMER, pomodoro.DEFAULT_SHORT_BREAK, pomodoro.DEFAULT_LONG_BREAK,
-		pomodoro.DEFAULT_WORK_TIMER, pomodoro.DEFAULT_SHORT_BREAK, pomodoro.DEFAULT_LONG_BREAK,
-		os.Args[0],
-		os.Args[0],
-		os.Args[0])
+	return exitOK
 }
