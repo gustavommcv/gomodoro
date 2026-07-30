@@ -38,7 +38,7 @@ func newTestSleeper(clock Clock) (*DefaultSleeper, *bytes.Buffer, *bytes.Buffer)
 		InputReader:    strings.NewReader("\n"),
 		Clock:          clock,
 		Notify:         func(title, message string) error { return nil },
-		PlaySound:      func() error { return nil },
+		PlaySound:      func(ctx context.Context) error { return nil },
 		NotifyEnabled:  true,
 		SoundEnabled:   true,
 	}
@@ -158,7 +158,7 @@ func TestDefaultSleeperPhaseCancellation(t *testing.T) {
 
 		notified, played := false, false
 		sleeper.Notify = func(title, message string) error { notified = true; return nil }
-		sleeper.PlaySound = func() error { played = true; return nil }
+		sleeper.PlaySound = func(ctx context.Context) error { played = true; return nil }
 		sleeper.InputReader = &blockingReader{} // would hang forever if reached
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -183,7 +183,7 @@ func TestDefaultSleeperAlerts(t *testing.T) {
 		sleeper, _, _ := newTestSleeper(newFakeClock())
 		var notifyCalls, soundCalls int
 		sleeper.Notify = func(title, message string) error { notifyCalls++; return nil }
-		sleeper.PlaySound = func() error { soundCalls++; return nil }
+		sleeper.PlaySound = func(ctx context.Context) error { soundCalls++; return nil }
 		sleeper.NotifyEnabled = true
 		sleeper.SoundEnabled = true
 
@@ -202,7 +202,7 @@ func TestDefaultSleeperAlerts(t *testing.T) {
 		sleeper, _, _ := newTestSleeper(newFakeClock())
 		var notifyCalls, soundCalls int
 		sleeper.Notify = func(title, message string) error { notifyCalls++; return nil }
-		sleeper.PlaySound = func() error { soundCalls++; return nil }
+		sleeper.PlaySound = func(ctx context.Context) error { soundCalls++; return nil }
 		sleeper.NotifyEnabled = true
 		sleeper.SoundEnabled = false
 
@@ -221,7 +221,7 @@ func TestDefaultSleeperAlerts(t *testing.T) {
 		sleeper, _, _ := newTestSleeper(newFakeClock())
 		var notifyCalls, soundCalls int
 		sleeper.Notify = func(title, message string) error { notifyCalls++; return nil }
-		sleeper.PlaySound = func() error { soundCalls++; return nil }
+		sleeper.PlaySound = func(ctx context.Context) error { soundCalls++; return nil }
 		sleeper.NotifyEnabled = false
 		sleeper.SoundEnabled = true
 
@@ -240,7 +240,7 @@ func TestDefaultSleeperAlerts(t *testing.T) {
 		sleeper, _, _ := newTestSleeper(newFakeClock())
 		var notifyCalls, soundCalls int
 		sleeper.Notify = func(title, message string) error { notifyCalls++; return nil }
-		sleeper.PlaySound = func() error { soundCalls++; return nil }
+		sleeper.PlaySound = func(ctx context.Context) error { soundCalls++; return nil }
 		sleeper.NotifyEnabled = false
 		sleeper.SoundEnabled = false
 
@@ -256,7 +256,7 @@ func TestDefaultSleeperAlerts(t *testing.T) {
 		sleeper, _, errs := newTestSleeper(newFakeClock())
 		soundCalled := false
 		sleeper.Notify = func(title, message string) error { return errors.New("no notification daemon") }
-		sleeper.PlaySound = func() error { soundCalled = true; return nil }
+		sleeper.PlaySound = func(ctx context.Context) error { soundCalled = true; return nil }
 
 		if err := sleeper.Work(context.Background(), 1); err != nil {
 			t.Fatalf("a notification failure should not fail the phase, got: %v", err)
@@ -273,7 +273,7 @@ func TestDefaultSleeperAlerts(t *testing.T) {
 		sleeper, _, errs := newTestSleeper(newFakeClock())
 		notifyCalled := false
 		sleeper.Notify = func(title, message string) error { notifyCalled = true; return nil }
-		sleeper.PlaySound = func() error { return errors.New("no audio device") }
+		sleeper.PlaySound = func(ctx context.Context) error { return errors.New("no audio device") }
 
 		if err := sleeper.Work(context.Background(), 1); err != nil {
 			t.Fatalf("a sound failure should not fail the phase, got: %v", err)
@@ -289,13 +289,39 @@ func TestDefaultSleeperAlerts(t *testing.T) {
 	t.Run("alert warnings never reach the progress writer", func(t *testing.T) {
 		sleeper, progress, _ := newTestSleeper(newFakeClock())
 		sleeper.Notify = func(title, message string) error { return errors.New("notify-boom") }
-		sleeper.PlaySound = func() error { return errors.New("sound-boom") }
+		sleeper.PlaySound = func(ctx context.Context) error { return errors.New("sound-boom") }
 
 		if err := sleeper.Work(context.Background(), 1); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if strings.Contains(progress.String(), "boom") {
 			t.Errorf("alert warnings leaked into progress output: %q", progress.String())
+		}
+	})
+
+	t.Run("the sound receives the phase's context, so it can react to cancellation", func(t *testing.T) {
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		var gotCtx context.Context
+		sleeper.PlaySound = func(ctx context.Context) error { gotCtx = ctx; return nil }
+
+		phaseCtx := context.Background()
+		if err := sleeper.Work(phaseCtx, 1); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if gotCtx != phaseCtx {
+			t.Error("expected PlaySound to receive the same context the phase was run with")
+		}
+	})
+
+	t.Run("a sound cancelled mid-playback is not reported as a warning", func(t *testing.T) {
+		sleeper, _, errs := newTestSleeper(newFakeClock())
+		sleeper.PlaySound = func(ctx context.Context) error { return context.Canceled }
+
+		if err := sleeper.Work(context.Background(), 1); err != nil {
+			t.Fatalf("a cancelled sound must not fail the phase on its own, got: %v", err)
+		}
+		if errs.Len() != 0 {
+			t.Errorf("did not expect a warning for a cancelled sound, got: %q", errs.String())
 		}
 	})
 }

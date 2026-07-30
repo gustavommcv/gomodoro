@@ -2,12 +2,14 @@ package pomodoro
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/gustavommcv/gomodoro/src/pkg/beep"
 	"github.com/gustavommcv/gomodoro/src/pkg/progressbar"
+	"github.com/gustavommcv/gomodoro/src/pkg/sound"
 )
 
 // DefaultSleeper is the real, terminal-facing Sleeper: it renders a
@@ -28,8 +30,10 @@ type DefaultSleeper struct {
 	Notify func(title, message string) error
 
 	// PlaySound plays a short alert sound; if nil, the sound is skipped.
-	// Tests inject a stub so no real OS sound is fired.
-	PlaySound func() error
+	// Tests inject a stub so no real OS sound is fired. It takes ctx so
+	// playback stops promptly on Ctrl+C instead of blocking the phase from
+	// ending.
+	PlaySound func(ctx context.Context) error
 
 	// NotifyEnabled and SoundEnabled are independent: disabling one must
 	// not disable the other.
@@ -47,7 +51,7 @@ func NewDefaultSleeper(progress, errOut io.Writer, input io.Reader, notifyEnable
 		InputReader:    input,
 		Clock:          realClock{},
 		Notify:         beep.SendNotification,
-		PlaySound:      beep.PlaySound,
+		PlaySound:      sound.Play,
 		NotifyEnabled:  notifyEnabled,
 		SoundEnabled:   soundEnabled,
 	}
@@ -86,15 +90,17 @@ func (d *DefaultSleeper) runPhase(ctx context.Context, minutes int, label, notif
 		return err
 	}
 
-	d.sendAlerts(notifyTitle)
+	d.sendAlerts(ctx, notifyTitle)
 
 	return d.WaitForUser(ctx)
 }
 
 // sendAlerts fires the notification and sound independently: either can
 // fail, or be disabled, without affecting the other. Both are best-effort —
-// a failure is a warning on stderr, never a reason to stop the Pomodoro.
-func (d *DefaultSleeper) sendAlerts(notifyTitle string) {
+// a failure is a warning on stderr, never a reason to stop the Pomodoro. A
+// cancelled ctx is not treated as a failure (no warning): WaitForUser right
+// after this will itself observe the same cancellation and return promptly.
+func (d *DefaultSleeper) sendAlerts(ctx context.Context, notifyTitle string) {
 	if d.NotifyEnabled && d.Notify != nil {
 		if err := d.Notify(notifyTitle, "press enter in the terminal to continue"); err != nil {
 			fmt.Fprintf(d.errWriter(), "gomodoro: warning: %v\n", err)
@@ -102,7 +108,7 @@ func (d *DefaultSleeper) sendAlerts(notifyTitle string) {
 	}
 
 	if d.SoundEnabled && d.PlaySound != nil {
-		if err := d.PlaySound(); err != nil {
+		if err := d.PlaySound(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			fmt.Fprintf(d.errWriter(), "gomodoro: warning: %v\n", err)
 		}
 	}

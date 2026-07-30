@@ -75,17 +75,52 @@ gomodoro start -notify=true -sound=true
 If a notification or sound fails to fire (e.g. no notification daemon or no
 audio device available), Gomodoro prints a short warning to stderr and
 continues — a failed alert never cancels the Pomodoro, and never affects
-the other alert.
-
-On Linux without a graphical session or configured audio, one or both
-alerts may simply be unavailable; this is a platform/environment
-limitation, not something Gomodoro can detect or work around in advance.
+the other alert. The sound alert never falls back to the terminal bell
+(`\a`) — if it can't reach a real audio device, it warns honestly instead
+of pretending to succeed.
 
 `-notify` and `-sound` currently only take effect for the current run. A
 config file is planned (see [Roadmap](#-roadmap)); once it exists, the
 intended precedence is `explicit flag > config file value > application
 default` — flags will keep overriding the config file, not the other way
 around.
+
+#### How the sound alert works
+
+The alert sound is a short tone (~350ms, a single gentle pitch with a
+fade-in and fade-out so there's no click at either end) generated in memory
+at runtime — there's no embedded audio file and nothing is downloaded.
+It's played through the operating system's normal audio output via
+[`ebitengine/oto`](https://github.com/ebitengine/oto), **not** the PC
+speaker (`pcspkr`) and **not** the terminal bell:
+
+- **Windows** — WASAPI, no extra runtime requirements.
+- **macOS** — the system AudioQueue API, no extra runtime requirements.
+- **Linux** — PulseAudio's native protocol first (which is exactly what
+  PipeWire serves via its `pipewire-pulse` compatibility layer, so this
+  reaches PipeWire directly on a typical modern Linux setup, Hyprland
+  included), falling back to ALSA if no Pulse-compatible socket is found.
+  If neither is reachable, Gomodoro reports a warning — it does not fall
+  back to `pcspkr` or `\a`.
+
+None of this requires a C compiler or cgo to build on any of the three
+platforms — see [Platform support](#platform-support) below for exactly
+which combinations were compiled, tested, and run manually.
+
+#### How the visual notification works
+
+The notification uses [`gen2brain/beeep`](https://github.com/gen2brain/beeep)
+(already a dependency for the tray/toast side of things): native toast or
+balloon notifications on Windows, the system AudioQueue-adjacent
+notification center via `osascript` on macOS, and on Linux, D-Bus (falling
+back to the `notify-send` or `kdialog` commands if present) — which means
+Linux needs a running notification daemon such as **Mako**, **SwayNC**, or
+**Dunst** for `-notify` to actually show anything. The absence of such a
+daemon does not block the timer or the sound alert: `-notify` and `-sound`
+are completely independent, and the notification backend is never used to
+trigger the sound (some notification daemons ignore sound hints entirely,
+so the sound alert always plays through the audio backend directly,
+regardless of what the notification daemon does or doesn't support).
 
 ## Flags
 
@@ -123,23 +158,84 @@ go build -o gomodoro ./src/cmd/gomodoro
 ## Building and testing from source
 
 ```bash
-go build ./...   # compile everything
+go build ./...   # compile everything -- no C compiler or cgo needed on any of the three OSes
 go vet ./...      # static checks
-go test ./...     # unit tests (fast, no real waiting — timing is simulated)
+go test ./...     # unit tests (fast, no real waiting, no real sound/notifications fired)
 ```
 
 ## Platform support
 
-Gomodoro is written entirely against the Go standard library plus one
-notification dependency ([`gen2brain/beeep`](https://github.com/gen2brain/beeep)),
-both of which support Windows, Linux, and macOS. Development and manual
-testing so far have only been done on **Windows**; Linux and macOS should
-work but have not been verified in this repository yet. In particular, the
-`-sound` alert on Linux depends on either PC-speaker access
-(`/dev/input/by-path/platform-pcspkr-event-spkr`) or a terminal bell
-fallback, and `-notify` depends on a running notification service (D-Bus,
-`notify-send`, or `kdialog`) — headless or minimal environments may not
-have either, and Gomodoro has not been exercised against one yet.
+Gomodoro's own code and its two dependencies
+([`gen2brain/beeep`](https://github.com/gen2brain/beeep) for notifications,
+[`ebitengine/oto`](https://github.com/ebitengine/oto) for sound) build
+without cgo on Windows, Linux, and macOS, for both `amd64` and `arm64`.
+Being honest about what that does and doesn't prove:
+
+| Platform | Compiled (cross-compilation) | Automated tests | Manually run | Notes |
+| --- | --- | --- | --- | --- |
+| `windows/amd64` | ✅ | ✅ | ✅ (real run, both alerts fired without error) | Primary development platform |
+| `windows/arm64` | ✅ | — | — | Compiles; not run |
+| `darwin/amd64` | ✅ | — | — | Compiles; not run |
+| `darwin/arm64` | ✅ | — | — | Compiles; not run |
+| `linux/amd64` | ✅ | — | — | Compiles; not run |
+| `linux/arm64` | ✅ | — | — | Compiles; not run |
+
+"Compiled" here means `GOOS`/`GOARCH` cross-compilation succeeded with
+`CGO_ENABLED=0` from a Windows machine — it proves the code builds, not
+that it runs correctly on that OS/CPU combination. Only `windows/amd64` has
+actually been run and observed to complete a real phase with both alerts
+firing without error. Linux and macOS runtime behavior — including the
+PipeWire/PulseAudio/ALSA path on Linux and the notification daemon
+requirement described above — is based on reading the dependencies' own
+source and documentation, not on running Gomodoro there yet. If you're on
+Linux (especially Hyprland/PipeWire), the [validation steps](#validating-the-alerts-on-linuxhyprland)
+below are exactly how to close that gap.
+
+## Validating the alerts on Linux/Hyprland
+
+```bash
+# 0. Confirm the terminal bell is not what you're listening for --
+#    this should stay silent or purely visual, never audible:
+printf '\a'
+
+# 1. Identify what's actually serving audio (informational only, this
+#    doesn't change anything):
+pactl info 2>/dev/null || pw-cli info 0 2>/dev/null
+systemctl --user status pipewire pipewire-pulse 2>/dev/null
+
+go build -o gomodoro ./src/cmd/gomodoro
+
+# 2. Both alerts on (default) -- should show a notification (if a daemon
+#    like Mako/SwayNC/Dunst is running) AND play an audible tone through
+#    your normal output device:
+./gomodoro start -work=1
+
+# 3. Sound with notification explicitly disabled -- still audible:
+./gomodoro start -work=1 -notify=false
+
+# 4. Notification with sound explicitly disabled -- completely silent,
+#    notification (if any) still shows:
+./gomodoro start -work=1 -sound=false
+
+# 5. If you can, temporarily stop your notification daemon (e.g.
+#    `pkill mako`) and confirm the sound still plays and the timer still
+#    completes -- the missing daemon should not block either.
+
+# 6. Ctrl+C partway through a phase -- should print
+#    "gomodoro: interrupted, stopping." and exit immediately, with no
+#    alert firing afterward:
+./gomodoro start -work=5
+# (press Ctrl+C a few seconds in)
+
+# 7. Confirm nothing was left behind:
+pgrep -a gomodoro   # should be empty
+# (Gomodoro does not open any persistent audio device/stream -- each
+# alert is a single short-lived playback that finishes and returns)
+```
+
+Please report back whether step 2 was actually audible, and through which
+backend (`pactl`/`pw-cli` output helps identify that) — that's the one
+piece of this feature that could not be confirmed from this environment.
 
 ## Current limitations
 
@@ -149,6 +245,14 @@ have either, and Gomodoro has not been exercised against one yet.
   alert toggles are set via flags for each run.
 - No session history or statistics.
 - No color themes.
+- The sound backend ([`ebitengine/oto`](https://github.com/ebitengine/oto))
+  is pinned to a pre-1.0 `v3.5.0-alpha` release, chosen deliberately over
+  the current stable `v3.4.0` because the stable release requires cgo and
+  ALSA development headers to build on Linux, while the alpha builds
+  without cgo everywhere (see the audio backend research in this project's
+  history for the full comparison). This is a real, tracked trade-off: an
+  alpha dependency has no compatibility guarantee from its maintainers.
+  Revisit this once `oto` ships a stable cgo-free release.
 
 ## 📌 Roadmap
 
