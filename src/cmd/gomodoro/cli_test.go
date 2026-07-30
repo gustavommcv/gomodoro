@@ -217,6 +217,17 @@ func TestParseArgs(t *testing.T) {
 			t.Error("expected usage text to document -sound")
 		}
 	})
+
+	t.Run("help lists the interactive phase controls", func(t *testing.T) {
+		var buf bytes.Buffer
+		printUsage(&buf)
+		out := buf.String()
+		for _, want := range []string{"Pause", "Skip", "Ctrl+C"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("expected usage text to mention %q", want)
+			}
+		}
+	})
 }
 
 func TestOptionalBool(t *testing.T) {
@@ -304,7 +315,7 @@ func TestResolveOptions(t *testing.T) {
 func TestRun(t *testing.T) {
 	t.Run("an unknown flag exits non-zero and writes a message to stderr", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
-		code := run([]string{"-bogus"}, &stdout, &stderr, nil)
+		code := run([]string{"-bogus"}, &stdout, &stderr, nil, false)
 
 		if code == exitOK {
 			t.Fatalf("expected a non-zero exit code, got %d", code)
@@ -316,7 +327,7 @@ func TestRun(t *testing.T) {
 
 	t.Run("help exits zero and writes usage to stdout", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
-		code := run([]string{"-h"}, &stdout, &stderr, nil)
+		code := run([]string{"-h"}, &stdout, &stderr, nil, false)
 
 		if code != exitOK {
 			t.Fatalf("want exit code %d, got %d", exitOK, code)

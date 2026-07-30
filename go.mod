@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/ebitengine/oto/v3 v3.5.0-alpha.8
 	github.com/gen2brain/beeep v0.10.0
+	golang.org/x/term v0.45.0
 )
 
 require (
@@ -17,5 +18,5 @@ require (
 	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
 	github.com/sergeymakinen/go-ico v1.0.0-beta.0 // indirect
 	github.com/tadvi/systray v0.0.0-20190226123456-11a2b8fa57af // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 )

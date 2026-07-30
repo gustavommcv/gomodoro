@@ -22,7 +22,8 @@ Work -> Short break -> Work -> Short break -> Work -> Short break -> Work -> Lon
 Between phases, Gomodoro shows a progress bar, then alerts you that the
 phase ended — a desktop notification and a short alert sound, each
 independently controllable — and waits for you to press `Enter` before
-moving on to the next phase.
+moving on to the next phase. While a phase is running, and you're in a
+real terminal, you can pause, resume, or skip it without touching Enter.
 
 ## Usage
 
@@ -50,6 +51,58 @@ does not wait for the current tick or notification to finish.
 Unknown flags and unexpected extra arguments are rejected with a clear
 message on stderr and a non-zero exit code — they are never silently
 ignored.
+
+### Interactive controls
+
+While a phase's countdown is running, and both stdin and stdout are real
+terminals, Gomodoro shows and responds to:
+
+```
+Work  12:43 remaining  [████████░░░░░░░░] 48%  [p] Pause  [s] Skip  [Ctrl+C] Quit
+```
+
+| Key | Action |
+| --- | --- |
+| `p` / `P` | Pause, or resume if already paused (one key toggles both directions) |
+| `s` / `S` | Skip the current phase |
+| `Ctrl+C` | Quit immediately |
+
+`p` is a single toggle, not separate pause/resume keys — this matches how
+most terminal Pomodoro/timer tools do it (see this project's audio/UX
+research history for the comparison), and it's one key to remember instead
+of two. Any other key is simply ignored; the controls shown are the
+complete, discoverable list, nothing else does anything.
+
+**While paused**, the display adds a `PAUSED` marker and swaps the hint to
+`[p] Resume`; the remaining time is frozen exactly where it was (no time
+elapses while paused, and resuming doesn't lose or add time, however long
+the pause lasted) and nothing else in the terminal changes or flickers.
+
+**Skipping** a phase ends it immediately: it does *not* count as a normal
+completion, so it does *not* trigger the end-of-phase notification or
+sound, and — unlike a natural completion — it does *not* wait for you to
+press Enter before moving on, since skipping is already a deliberate
+keypress. You'll see a short "`<phase> skipped.`" line instead. Cancelling
+with `Ctrl+C` is a third, distinct outcome from either: no alert, no
+skip message, and the whole program exits (it doesn't move on to the next
+phase).
+
+**Without a real terminal on both ends** (input/output redirected to a
+file, piped, or run non-interactively — e.g. `gomodoro start < /dev/null`
+or `gomodoro start | tee log`), Gomodoro detects this and simply doesn't
+offer these controls for that run: the countdown displays and behaves
+exactly as it did before this feature existed, and Gomodoro never blocks
+trying to read a keypress that can't arrive. `Ctrl+C` still works in this
+mode too (via the normal OS signal, same as always).
+
+Terminal raw mode (needed to read `p`/`s` without waiting for Enter) is
+entered only around the countdown itself and always restored right after
+— on natural completion, on skip, on cancellation, and on error — through
+a single, idempotent restore step. It's implemented with
+[`golang.org/x/term`](https://pkg.go.dev/golang.org/x/term), the Go
+project's own small terminal package (`MakeRaw`/`Restore`/`IsTerminal`;
+no cgo, no extra runtime dependency) — not a general keyboard-event
+library or a TUI framework, which this feature doesn't need.
 
 ### Alerts
 
@@ -165,15 +218,16 @@ go test ./...     # unit tests (fast, no real waiting, no real sound/notificatio
 
 ## Platform support
 
-Gomodoro's own code and its two dependencies
+Gomodoro's own code and its three dependencies
 ([`gen2brain/beeep`](https://github.com/gen2brain/beeep) for notifications,
-[`ebitengine/oto`](https://github.com/ebitengine/oto) for sound) build
-without cgo on Windows, Linux, and macOS, for both `amd64` and `arm64`.
-Being honest about what that does and doesn't prove:
+[`ebitengine/oto`](https://github.com/ebitengine/oto) for sound,
+[`golang.org/x/term`](https://pkg.go.dev/golang.org/x/term) for raw-mode
+input) build without cgo on Windows, Linux, and macOS, for both `amd64` and
+`arm64`. Being honest about what that does and doesn't prove:
 
 | Platform | Compiled (cross-compilation) | Automated tests | Manually run | Notes |
 | --- | --- | --- | --- | --- |
-| `windows/amd64` | ✅ | ✅ | ✅ (real run, both alerts fired without error) | Primary development platform |
+| `windows/amd64` | ✅ | ✅ | ✅ (real run: alerts fire, non-interactive fallback confirmed) | Primary development platform |
 | `windows/arm64` | ✅ | — | — | Compiles; not run |
 | `darwin/amd64` | ✅ | — | — | Compiles; not run |
 | `darwin/arm64` | ✅ | — | — | Compiles; not run |
@@ -183,15 +237,21 @@ Being honest about what that does and doesn't prove:
 "Compiled" here means `GOOS`/`GOARCH` cross-compilation succeeded with
 `CGO_ENABLED=0` from a Windows machine — it proves the code builds, not
 that it runs correctly on that OS/CPU combination. Only `windows/amd64` has
-actually been run and observed to complete a real phase with both alerts
-firing without error. Linux and macOS runtime behavior — including the
-PipeWire/PulseAudio/ALSA path on Linux and the notification daemon
-requirement described above — is based on reading the dependencies' own
-source and documentation, not on running Gomodoro there yet. If you're on
-Linux (especially Hyprland/PipeWire), the [validation steps](#validating-the-alerts-on-linuxhyprland)
-below are exactly how to close that gap.
+actually been run manually, and even there, the development environment
+used to build this feature has no real interactive terminal attached
+(`term.IsTerminal` reports false), so the *interactive* pause/resume/skip
+controls specifically have only been exercised by the automated test suite
+(which drives the countdown's logic directly, without a real terminal or
+raw mode) — not observed working end-to-end with a real keypress on any
+platform yet. Linux and macOS runtime behavior — including the
+PipeWire/PulseAudio/ALSA sound path, the notification daemon requirement,
+and raw-mode behavior in a real terminal — is based on reading the
+dependencies' own source and documentation, not on running Gomodoro there.
+If you're on Linux (especially Hyprland/PipeWire), the
+[validation steps](#validating-on-linuxhyprland) below are exactly how to
+close that gap.
 
-## Validating the alerts on Linux/Hyprland
+## Validating on Linux/Hyprland
 
 ```bash
 # 0. Confirm the terminal bell is not what you're listening for --
@@ -221,29 +281,73 @@ go build -o gomodoro ./src/cmd/gomodoro
 #    `pkill mako`) and confirm the sound still plays and the timer still
 #    completes -- the missing daemon should not block either.
 
-# 6. Ctrl+C partway through a phase -- should print
-#    "gomodoro: interrupted, stopping." and exit immediately, with no
-#    alert firing afterward:
+# 6. Interactive controls -- start a longer phase so there's time to try
+#    these, and confirm:
+#    - pressing `p` freezes the countdown at exactly the remaining time
+#      shown and adds a PAUSED marker, with no CPU spinning
+#      (check e.g. `top`/`htop` -- gomodoro should sit near 0% CPU while
+#      paused, not busy-loop);
+#    - pressing `p` again resumes from exactly where it froze, not from
+#      the start, and not with missing/extra time;
+#    - pressing `s` (either while running or while paused) ends the phase
+#      immediately with a short "skipped." message, no notification, no
+#      sound, and moves straight to the next phase without waiting for
+#      Enter:
 ./gomodoro start -work=5
-# (press Ctrl+C a few seconds in)
 
-# 7. Confirm nothing was left behind:
+# 7. Ctrl+C while a phase is actively running (i.e. while the interactive
+#    controls are shown) -- should print "gomodoro: interrupted,
+#    stopping." and exit immediately, with no alert firing afterward:
+./gomodoro start -work=5
+# (press Ctrl+C a few seconds in, while it's running, not paused)
+
+# 8. Ctrl+C while a phase is paused -- should behave the same as step 7:
+./gomodoro start -work=5
+# (press `p` to pause, then Ctrl+C)
+
+# 9. After every exit above (natural completion, skip, Ctrl+C), confirm
+#    your shell's normal typing/echo still works right away -- type
+#    something and see it appear normally. This is what proves the
+#    terminal was actually restored out of raw mode, not just that the
+#    process exited.
+echo "terminal still behaves normally after gomodoro exits"
+
+# 10. Confirm nothing was left behind:
 pgrep -a gomodoro   # should be empty
-# (Gomodoro does not open any persistent audio device/stream -- each
-# alert is a single short-lived playback that finishes and returns)
+# (Gomodoro does not open any persistent audio device/stream, and doesn't
+# hold the terminal in raw mode after it exits -- each run cleans up after
+# itself)
+
+# 11. Non-interactive fallback -- confirm this does NOT show the
+#     interactive hint text and does NOT hang waiting for a key that can
+#     never arrive:
+./gomodoro start -work=1 < /dev/null
+./gomodoro start -work=1 | tee /tmp/gomodoro-log.txt
 ```
 
-Please report back whether step 2 was actually audible, and through which
-backend (`pactl`/`pw-cli` output helps identify that) — that's the one
-piece of this feature that could not be confirmed from this environment.
+Please report back:
+- whether step 2 was actually audible, and through which backend
+  (`pactl`/`pw-cli` output helps identify that);
+- whether pause/resume in step 6 genuinely froze and resumed without
+  losing or gaining time;
+- whether your shell's input behaves normally after each exit path in
+  step 9 (this is the real test of whether raw mode was cleanly restored).
+
+These are the pieces of this feature that could not be confirmed from this
+environment (no real terminal, no real audio device attached here).
 
 ## Current limitations
 
 - Runs exactly one lap and exits — no continuous/looping mode yet.
-- No pause, resume, or skip while a phase is running.
+- Pause/resume/skip only work in a real terminal (both stdin and stdout);
+  redirected or piped runs fall back to the plain countdown with no
+  interactive controls, by design (see [Interactive controls](#interactive-controls)).
 - No configuration file or environment variable overrides yet; durations and
   alert toggles are set via flags for each run.
-- No session history or statistics.
+- No session history or statistics — a skipped phase is deliberately *not*
+  counted the same as a completed one internally, so this distinction is
+  preserved for whenever history/stats are added, but nothing is persisted
+  or reported yet.
 - No color themes.
 - The sound backend ([`ebitengine/oto`](https://github.com/ebitengine/oto))
   is pinned to a pre-1.0 `v3.5.0-alpha` release, chosen deliberately over
@@ -253,12 +357,15 @@ piece of this feature that could not be confirmed from this environment.
   history for the full comparison). This is a real, tracked trade-off: an
   alpha dependency has no compatibility guarantee from its maintainers.
   Revisit this once `oto` ships a stable cgo-free release.
+- The interactive controls have not yet been exercised with a real
+  keypress on any platform in this project's own testing (see
+  [Platform support](#platform-support)) — only through the automated
+  test suite, which drives the same logic without a real terminal.
 
 ## 📌 Roadmap
 
 - [ ] Config file support
 - [ ] Continuous/looping execution (e.g. `--loop`)
-- [ ] Pause / resume / skip
 - [ ] Customizable terminal color themes
 - [ ] Lap count / session history
 

@@ -161,7 +161,14 @@ Examples:
   gomodoro start -notify=false -sound=false
 
 Notification and sound are independent: disabling one does not disable the
-other. Press Ctrl+C at any time to stop.
+other.
+
+While a phase is running (in a real terminal only):
+  p    Pause / resume
+  s    Skip the current phase
+  Ctrl+C   Quit
+
+Press Ctrl+C at any time to stop.
 `,
 		pomodoro.DefaultWorkMinutes, pomodoro.DefaultShortBreakMinutes, pomodoro.DefaultLongBreakMinutes)
 }

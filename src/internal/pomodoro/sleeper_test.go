@@ -333,3 +333,197 @@ type blockingReader struct{}
 func (*blockingReader) Read([]byte) (int, error) {
 	select {}
 }
+
+// runCountdown runs runInteractiveCountdown in a goroutine and waits for
+// its result, failing fast (instead of hanging the suite) if it never
+// returns. The fake clock makes ticks resolve instantly, so a command sent
+// on input genuinely races the ticker in Go's select -- that race is only
+// over *which loop iteration* notices the command, never over the
+// eventual outcome, so asserting on the final result (not on exactly how
+// many ticks preceded it) is what these tests check.
+func runCountdown(t *testing.T, sleeper *DefaultSleeper, ctx context.Context, minutes int, label string, input <-chan byte) (phaseResult, error) {
+	t.Helper()
+	type outcome struct {
+		result phaseResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		r, err := sleeper.runInteractiveCountdown(ctx, minutes, label, input)
+		done <- outcome{r, err}
+	}()
+
+	select {
+	case o := <-done:
+		return o.result, o.err
+	case <-time.After(2 * time.Second):
+		t.Fatal("runInteractiveCountdown did not return in time")
+		return 0, nil
+	}
+}
+
+// runWork calls sleeper.Work in a goroutine and waits for it, failing fast
+// instead of hanging the suite if it never returns (e.g. a regression that
+// makes a skipped phase fall through to WaitForUser against a reader that
+// will never produce '\n').
+func runWork(t *testing.T, sleeper *DefaultSleeper, ctx context.Context, minutes int) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- sleeper.Work(ctx, minutes) }()
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(2 * time.Second):
+		t.Fatal("Work did not return in time")
+		return nil
+	}
+}
+
+func TestDefaultSleeperInteractiveCountdown(t *testing.T) {
+	t.Run("skip while running ends the phase as skipped, not completed", func(t *testing.T) {
+		sleeper, progress, _ := newTestSleeper(newFakeClock())
+		input := make(chan byte, 4)
+		input <- 's'
+
+		result, err := runCountdown(t, sleeper, context.Background(), 25, "Work", input)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != phaseSkipped {
+			t.Fatalf("result = %v, want phaseSkipped", result)
+		}
+		if !strings.Contains(progress.String(), "skipped") {
+			t.Errorf("expected short skip feedback in output, got: %q", progress.String())
+		}
+	})
+
+	t.Run("pause then resume then skip: the phase still ends as skipped, not completed or double-transitioned", func(t *testing.T) {
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		input := make(chan byte, 4)
+		input <- 'p' // pause
+		input <- 'p' // resume
+		input <- 's' // skip
+
+		result, err := runCountdown(t, sleeper, context.Background(), 1, "Work", input)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != phaseSkipped {
+			t.Fatalf("result = %v, want phaseSkipped", result)
+		}
+	})
+
+	t.Run("Ctrl+C (0x03) cancels the countdown", func(t *testing.T) {
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		input := make(chan byte, 4)
+		input <- 0x03
+
+		result, err := runCountdown(t, sleeper, context.Background(), 25, "Work", input)
+
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("want context.Canceled, got %v", err)
+		}
+		if result != phaseCancelled {
+			t.Fatalf("result = %v, want phaseCancelled", result)
+		}
+	})
+
+	t.Run("cancelling the parent context (not via keypress) also ends the countdown", func(t *testing.T) {
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		result, err := runCountdown(t, sleeper, ctx, 25, "Work", make(chan byte))
+
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("want context.Canceled, got %v", err)
+		}
+		if result != phaseCancelled {
+			t.Fatalf("result = %v, want phaseCancelled", result)
+		}
+	})
+
+	t.Run("an unrecognized key is ignored, and a later skip still works", func(t *testing.T) {
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		input := make(chan byte, 4)
+		input <- 'x' // not a command
+		input <- 's'
+
+		result, err := runCountdown(t, sleeper, context.Background(), 25, "Work", input)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != phaseSkipped {
+			t.Fatalf("result = %v, want phaseSkipped", result)
+		}
+	})
+
+	t.Run("a closed input channel (EOF) does not stop the countdown from completing normally", func(t *testing.T) {
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		input := make(chan byte)
+		close(input)
+
+		result, err := runCountdown(t, sleeper, context.Background(), 1, "Work", input)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != phaseCompleted {
+			t.Fatalf("result = %v, want phaseCompleted", result)
+		}
+	})
+
+	t.Run("no alerts are sent for a skipped phase, and WaitForUser is never reached", func(t *testing.T) {
+		// The pipe writer sends exactly one 's' and then leaves the pipe
+		// open without closing or writing again: if the skip result ever
+		// stopped short-circuiting to WaitForUser, that call would block
+		// forever reading from this same pipe, and runWork below would
+		// time out instead of returning -- so this test fails loudly
+		// rather than hanging if that regresses.
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		sleeper.Interactive = true
+		sleeper.EnterRawMode = func() (func(), error) { return func() {}, nil }
+
+		pr, pw := io.Pipe()
+		t.Cleanup(func() { pr.Close(); pw.Close() })
+		sleeper.InputReader = pr
+		go func() { pw.Write([]byte("s")) }()
+
+		notified, played := false, false
+		sleeper.Notify = func(title, message string) error { notified = true; return nil }
+		sleeper.PlaySound = func(ctx context.Context) error { played = true; return nil }
+
+		if err := runWork(t, sleeper, context.Background(), 25); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if notified || played {
+			t.Errorf("did not expect alerts for a skipped phase, notified=%v played=%v", notified, played)
+		}
+	})
+
+	t.Run("when raw mode is unavailable, the phase falls back to the plain countdown and still completes", func(t *testing.T) {
+		sleeper, _, _ := newTestSleeper(newFakeClock())
+		sleeper.Interactive = true
+		sleeper.EnterRawMode = func() (func(), error) { return nil, errors.New("not a terminal") }
+
+		if err := sleeper.Work(context.Background(), 1); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("when not interactive, the countdown behaves exactly as the plain (non-interactive) one", func(t *testing.T) {
+		sleeper, progress, _ := newTestSleeper(newFakeClock())
+		sleeper.Interactive = false
+
+		if err := sleeper.Work(context.Background(), 1); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.Contains(progress.String(), "[p] Pause") {
+			t.Errorf("did not expect interactive controls hint when not interactive, got: %q", progress.String())
+		}
+	})
+}
