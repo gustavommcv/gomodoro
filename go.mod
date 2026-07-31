@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/ebitengine/oto/v3 v3.5.0-alpha.8
 	github.com/gen2brain/beeep v0.10.0
+	github.com/yuin/gopher-lua v1.1.2
 	golang.org/x/term v0.45.0
 )
 
